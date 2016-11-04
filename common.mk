@@ -43,6 +43,7 @@ PROGRAM_OUT   = $(BUILD_DIR)$(PROGRAM).out
 LDFLAGS      += $(addprefix -T,$(LINKER_SCRIPTS))
 
 FW_FILE = $(addprefix $(FIRMWARE_DIR),$(PROGRAM).bin)
+FW_FILE_BASE = 0x2000
 
 # Common include directories, shared across all "components"
 # components will add their include directories to this argument
@@ -68,7 +69,7 @@ Q := @
 vecho := @echo
 endif
 
-.PHONY: all clean flash erase_flash test size rebuild
+.PHONY: all clean flash erase_flash test size rebuild simulate
 
 all: $(PROGRAM_OUT) $(FW_FILE_1) $(FW_FILE_2) $(FW_FILE)
 
@@ -211,7 +212,22 @@ $(FW_FILE): $(PROGRAM_OUT) $(FIRMWARE_DIR)
 
 flash: all
 	$(ESPTOOL) -p $(ESPPORT) --baud $(ESPBAUD) write_flash $(ESPTOOL_ARGS) \
-		0x0 $(RBOOT_BIN) 0x1000 $(RBOOT_CONF) 0x2000 $(FW_FILE) $(SPIFFS_ESPTOOL_ARGS)
+		$(RBOOT_BIN_BASE) $(RBOOT_BIN)	\
+		$(RBOOT_CONF_BASE) $(RBOOT_CONF)	\
+		$(FW_FILE_BASE) $(FW_FILE) $(SPIFFS_ESPTOOL_ARGS)
+
+$(FW_FILE).kernel: all
+	cat   $(RBOOT_BIN)  /dev/zero | head -c $$(($(RBOOT_CONF_BASE))) |	\
+	cat - $(RBOOT_CONF) /dev/zero | head -c $$(($(FW_FILE_BASE))) |	\
+	cat - $(FW_FILE) > $(FW_FILE).kernel
+
+simulate:	$(FW_FILE).kernel
+	qemu-system-xtensa -M esp8266	\
+		-nographic		\
+		-serial tcp::4444,server	\
+		-monitor none		\
+		-s			\
+		-kernel $(<)
 
 erase_flash:
 	$(ESPTOOL) -p $(ESPPORT) --baud $(ESPBAUD) erase_flash
